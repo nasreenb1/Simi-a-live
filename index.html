@@ -86,6 +86,7 @@ input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--cream);o
 .ans{color:#ffd9d0;font-weight:700;border-bottom:2px solid #ff6a4a}.ln2{color:#ff9a8a}
 .opt{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .b2{font:600 16px 'Prompt';color:var(--cream);background:#ffffff0d;border:1px solid #F6F3EA66;padding:13px 6px;min-height:54px;cursor:pointer;transition:.2s}.b2:hover:not(:disabled){background:#882720aa}
+.b2.sel{background:#882720;border-color:#F6F3EA;box-shadow:0 0 18px #ff4a3566}
 .b2.no{border-color:#ff6a4a;background:#882720cc;animation:sh .4s}@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 .rv{display:flex;gap:12px;flex-wrap:wrap}
 #hint{font-size:13px;color:var(--mut);text-align:left;margin-top:14px;font-weight:300}
@@ -165,13 +166,16 @@ const IMG_S=["data:image/webp;base64,UklGRhBjAABXRUJQVlA4WAoAAAAQAAAAjwEAVwIAQUx
 /* ===== ตั้งค่า: วาง Web app URL จาก Apps Script ตรงนี้ (เว้นว่างไว้ = โหมดทดลองในเบราว์เซอร์เดียว) ===== */
 const URL_ = 'https://script.google.com/macros/s/AKfycbzb22auVTegGPiP88vMyeLC11ccViktIbd6mnDM9f9pAA3GaFyOVfBoBnTeu6TIt521/exec';
 const $ = id => document.getElementById(id);
-const demo = !/^https/.test(URL_);
+const demo = !/^https?:/.test(URL_);
 
 /* ---------- API ---------- */
 async function api(a, d = {}) {
   if (demo) return mock(a, d);
-  if (a === 'state') return (await fetch(URL_ + '?t=' + Date.now())).json();
-  return (await fetch(URL_, { method: 'POST', body: JSON.stringify({ a, ...d }) })).json();
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 20000);
+  try {
+    if (a === 'state') return await (await fetch(URL_ + '?t=' + Date.now(), { signal: c.signal })).json();
+    return await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ a, ...d }), signal: c.signal })).json();
+  } finally { clearTimeout(t); }
 }
 function mock(a, d) {
   const S = JSON.parse(localStorage.sim || '{"status":"waiting","players":[]}');
@@ -289,17 +293,23 @@ function pickCh(i) {
   document.querySelectorAll('.th').forEach(b => b.classList.toggle('on', +b.dataset.i === i));
 }
 async function join() {
-  $('rg').disabled = true;
-  try { S = await api('join', me); } catch (e) { $('er').textContent = 'Connection problem. Try again. เชื่อมต่อไม่ได้ ลองอีกครั้ง'; $('rg').disabled = false; show('s-reg'); return; }
-  $('wf').replaceChildren(fig(me.char, 0)); show('s-wait'); poll(); clearInterval(timer); timer = setInterval(poll, 3000);
+  $('rg').disabled = true; let ok = false;
+  for (let i = 0; i < 5 && !ok; i++) {
+    try { const r = await api('join', me); ok = !!r && r.ok !== false; } catch (e) {}
+    if (!ok) await new Promise(z => setTimeout(z, 800 + Math.random() * 1500 + i * 800));
+  }
+  if (!ok) { $('er').textContent = 'Connection problem. Try again. เชื่อมต่อไม่ได้ ลองอีกครั้ง'; $('rg').disabled = false; show('s-reg'); return; }
+  $('wf').replaceChildren(fig(me.char, 0)); show('s-wait'); poll(); pollLoop();
 }
 async function poll() {
-  if (cur === 's-play') return;
+  if (cur !== 's-wait') return;
   try { S = await api('state'); } catch (e) { return; }
   const m = S.players.find(p => p.id === me.id);
-  if (cur === 's-wait') { $('wn').textContent = S.players.length; if (S.status === 'playing') startPlay(m ? m.progress : 0); }
-  if (cur === 's-done') doneInfo(m);
+  $('wn').textContent = S.players.length;
+  if (S.status === 'playing') startPlay(m ? m.progress : 0);
 }
+let pt = null;
+function pollLoop() { clearTimeout(pt); pt = setTimeout(async () => { await poll(); if (cur === 's-wait') pollLoop(); }, 3500 + Math.random() * 2500); }
 function startPlay(p) { sfx('start'); qi = p || 0; FIG = fig(me.char, qi / Q.length); $('pf').replaceChildren(FIG); show('s-play'); renderQ(); }
 function renderQ() {
   if (qi >= Q.length) return finish();
@@ -311,9 +321,17 @@ function renderQ() {
   q.t === 'c' ? renderChoice(q) : renderWrite(q);
 }
 function renderChoice(q) {
-  $('hint').textContent = 'Choose the structure that fits the gap. เลือกคำที่เติมได้ถูกต้อง';
-  $('qb').innerHTML = `<p class="st">${q.s.split('__').join('<span class="bl">&nbsp;</span>')}</p><div class="opt">${OPT.map(o => `<button class="b2">${o}</button>`).join('')}</div>`;
-  $('qb').querySelectorAll('.b2').forEach(b => b.onclick = () => pick(b, q));
+  $('hint').textContent = 'Pick the structure you think fits, then lock it in. เลือกคำที่คิดว่าถูก แล้วกดยืนยัน';
+  $('qb').innerHTML = `<p class="st">${q.s.split('__').join('<span class="bl">&nbsp;</span>')}</p><div class="opt">${OPT.map(o => `<button class="b2">${o}</button>`).join('')}</div><div style="margin-top:14px"><button class="btn" id="ok" disabled>Lock it in</button></div>`;
+  let ch = null;
+  $('qb').querySelectorAll('.b2').forEach(b => b.onclick = () => {
+    ch = b.textContent; sfx('click');
+    $('qb').querySelectorAll('.b2').forEach(x => x.classList.toggle('sel', x === b));
+    const f = ch === 'as … as' ? ['as', 'as'] : [ch, ch];
+    $('qb').querySelectorAll('.bl').forEach((s, i) => { s.textContent = f[i]; s.classList.remove('ok'); void s.offsetWidth; s.classList.add('ok'); });
+    $('ok').disabled = false;
+  });
+  $('ok').onclick = () => { $('ok').disabled = true; $('qb').querySelectorAll('.b2').forEach(x => x.disabled = true); sfx('good'); commit('choice', ch, ch === q.a); };
 }
 function renderWrite(q) {
   $('hint').textContent = 'Invent your own simile: the more creative, the better! ยิ่งสร้างสรรค์ ยิ่งดี';
@@ -332,28 +350,29 @@ function review(q, v) {
   $('ed').onclick = () => renderWrite(q);
   $('ok').onclick = () => { $('ok').disabled = $('ed').disabled = true; sfx('good'); commit('write', v); };
 }
-function pick(b, q) {
-  if (b.textContent !== q.a) { att++; sfx('bad'); b.classList.add('no'); setTimeout(() => b.classList.remove('no'), 500); return; }
-  sfx('good'); const f = q.a === 'as … as' ? ['as', 'as'] : [q.a];
-  document.querySelectorAll('.bl').forEach((s, i) => { s.textContent = f[i]; s.classList.add('ok'); });
-  document.querySelectorAll('.b2').forEach(x => x.disabled = true);
-  commit('choice', q.a);
-}
-async function commit(type, text) {
+let outbox = [], flushing = false;
+function commit(type, text, ok) {
   const n = ++qi; sfx('build'); setP(FIG, n / Q.length, true); hit(FIG.parentElement);
-  let r = null;
-  for (let i = 0; i < 4 && !r; i++) {
-    try { r = await api('answer', { id: me.id, no: me.no, name: me.name, qid: n, type, text, att, progress: n, total: Q.length }); }
-    catch (e) { await new Promise(z => setTimeout(z, 900)); }
-  }
-  if (r) S = r;
-  setTimeout(renderQ, 1700);
+  outbox.push({ id: me.id, no: me.no, name: me.name, qid: n, type, text, ok: !!ok, att: 0, retry: 0 });
+  flush(); setTimeout(renderQ, 1700);
 }
+async function flush() { // ส่งทีละข้อตามลำดับ ส่งไม่สำเร็จจะลองใหม่เองจนกว่าจะสำเร็จ นักเรียนเล่นต่อได้ไม่ต้องรอ
+  if (flushing) return; flushing = true;
+  while (outbox.length) {
+    const d = outbox[0]; let r = null;
+    try { r = await api('answer', d); } catch (e) {}
+    if (r && r.ok === false) { outbox.shift(); continue; }
+    if (r && (r.ok || r.players)) { outbox.shift(); gotRank(r); }
+    else { d.retry++; await new Promise(z => setTimeout(z, 1500 + Math.random() * 2500)); }
+  }
+  flushing = false;
+}
+function gotRank(r) { const m = r.players ? r.players.find(p => p.id === me.id) : r; if (m && m.rank) { me.rank = m.rank; me.bonus = m.bonus; if (cur === 's-done') doneInfo(me); } }
 function finish() {
   show('s-done'); const F = fig(me.char, 0); $('df').replaceChildren(F);
   $('dn').textContent = `${me.name} · No. ${me.no}`; $('rk').textContent = 'Awakened'; $('bn').textContent = '';
   setTimeout(() => { setP(F, 1, true); sfx('build'); hit($('df')); burst(F); }, 300); setTimeout(() => sfx('win'), 1800);
-  doneInfo(S.players.find(p => p.id === me.id));
+  doneInfo(me);
 }
 function doneInfo(m) {
   if (!m || !m.rank) return;
@@ -365,11 +384,18 @@ const cards = {}; let t0 = 0;
 function hostInit() {
   show('s-host');
   const key = demo ? '' : (prompt('Host key / รหัสโฮสต์') || '');
-  $('hb').onclick = () => api('start', { key }).then(hostRender);
-  $('hr').onclick = () => { if (confirm('Reset the game and clear all players?')) api('reset', { key }).then(hostRender); };
+  $('hb').onclick = () => hostCmd('start', key);
+  $('hr').onclick = () => { if (confirm('Reset the game and clear all players?')) hostCmd('reset', key); };
   const tick = () => api('state').then(hostRender).catch(() => {});
   tick(); setInterval(tick, 2000);
   setInterval(() => { if (t0) { const s = (Date.now() - t0) / 1000 | 0; $('ht').textContent = String(s / 60 | 0).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); } else $('ht').textContent = ''; }, 1000);
+}
+async function hostCmd(a, key) { // ส่งคำสั่งโฮสต์ ลองซ้ำเองถ้าเครือข่ายสะดุด
+  for (let i = 0; i < 6; i++) {
+    try { const r = await api(a, { key }); if (r.err) { alert('Wrong host key · รหัสโฮสต์ไม่ถูกต้อง'); return; } hostRender(r); return; }
+    catch (e) { await new Promise(z => setTimeout(z, 700 * (i + 1))); }
+  }
+  alert('Cannot reach the server. Press the button again. · เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กดอีกครั้ง');
 }
 function toast(m) { const t = $('tt'); t.textContent = m; t.classList.add('on'); clearTimeout(t.h); t.h = setTimeout(() => t.classList.remove('on'), 3800); }
 function hostRender(s) {
