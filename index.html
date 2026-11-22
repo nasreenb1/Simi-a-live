@@ -104,6 +104,8 @@ input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--cream);o
 .pc i{display:block;height:5px;background:#ffffff1f;margin:6px 6px 4px}.pc u{display:block;height:100%;background:linear-gradient(90deg,#F6F3EA,#ff6a4a);transition:width 1s}
 .pc em{font:700 12px 'Cinzel',serif;font-style:normal;letter-spacing:.1em}
 .pc.done{border-color:var(--cream);box-shadow:0 0 28px #ff6a4a88;background:linear-gradient(#6a1c16cc,#2a0f0c)}
+#ver{position:fixed;left:12px;bottom:8px;font-size:10px;letter-spacing:.1em;color:#F6F3EA66;z-index:3}
+#fsh{font-size:11px;letter-spacing:.14em;color:var(--mut);opacity:.7}:fullscreen #fsh{display:none}
 #tt{position:fixed;top:16px;left:50%;opacity:0;transform:translate(-50%,-220%);z-index:7;background:linear-gradient(#B8372B,#6a1c16);border:1px solid var(--cream);padding:12px 28px;font:700 18px 'Cinzel',serif;letter-spacing:.08em;box-shadow:0 10px 40px #000a;transition:transform .5s cubic-bezier(.2,1.2,.3,1),opacity .3s}#tt.on{opacity:1;transform:translate(-50%,0)}
 @media(min-width:1000px){.pl{grid-template-columns:340px 1fr;gap:40px}#s-play .big{height:min(480px,58vh)}.st{font-size:34px}.th{flex-basis:72px;height:108px}}
 @media(max-width:760px){.pl{grid-template-columns:1fr;gap:10px}#s-play .big{height:32vh;margin:auto}}
@@ -118,6 +120,7 @@ input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--cream);o
   <p class="sub">Turned to stone. Brought back to life, one simile at a time.</p>
   <div class="ldb"><i id="ld"></i></div>
   <button class="btn" id="enter" disabled>Loading…</button>
+  <small id="ver">build 22-11 · free-choice</small>
 </section>
 <section id="s-char" class="scr">
   <h2>Choose who you will awaken</h2>
@@ -154,7 +157,7 @@ input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--cream);o
   <p class="sub" style="font-size:18px">Your answers will be checked by your teacher.</p>
 </section>
 <section id="s-host" class="scr">
-  <div class="hh"><h1 class="ttl">Simi(a)live</h1><span id="hs">WAITING ROOM</span><span id="hc"></span><span id="ht"></span><span class="sp2"></span>
+  <div class="hh"><h1 class="ttl">Simi(a)live</h1><span id="hs">WAITING ROOM</span><span id="hc"></span><span id="ht"></span><span id="fsh" class="cz">Press Enter for fullscreen</span><span class="sp2"></span>
     <button class="btn sm" id="hb">Start game</button><button class="btn sm gh" id="hr">Reset</button></div>
   <div id="hg"></div>
 </section>
@@ -381,8 +384,10 @@ function doneInfo(m) {
 
 /* ---------- Host screen ---------- */
 const cards = {}; let t0 = 0;
+function toggleFS() { const d = document; if (d.fullscreenElement) d.exitFullscreen(); else (d.documentElement.requestFullscreen || d.documentElement.webkitRequestFullscreen).call(d.documentElement); }
 function hostInit() {
   show('s-host');
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); auInit(); toggleFS(); } });
   const key = demo ? '' : (prompt('Host key / รหัสโฮสต์') || '');
   $('hb').onclick = () => hostCmd('start', key);
   $('hr').onclick = () => { if (confirm('Reset the game and clear all players?')) hostCmd('reset', key); };
