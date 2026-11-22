@@ -105,6 +105,8 @@ input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--cream);o
 .pc em{font:700 12px 'Cinzel',serif;font-style:normal;letter-spacing:.1em}
 .pc.done{border-color:var(--cream);box-shadow:0 0 28px #ff6a4a88;background:linear-gradient(#6a1c16cc,#2a0f0c)}
 #ver{position:fixed;left:12px;bottom:8px;font-size:10px;letter-spacing:.1em;color:#F6F3EA66;z-index:3}
+#vw{background:#882720;border:1px solid #F6F3EA;padding:12px 16px;font-weight:600}
+#sync{font-size:12px;letter-spacing:.12em}
 #fsh{font-size:11px;letter-spacing:.14em;color:var(--mut);opacity:.7}:fullscreen #fsh{display:none}
 #tt{position:fixed;top:16px;left:50%;opacity:0;transform:translate(-50%,-220%);z-index:7;background:linear-gradient(#B8372B,#6a1c16);border:1px solid var(--cream);padding:12px 28px;font:700 18px 'Cinzel',serif;letter-spacing:.08em;box-shadow:0 10px 40px #000a;transition:transform .5s cubic-bezier(.2,1.2,.3,1),opacity .3s}#tt.on{opacity:1;transform:translate(-50%,0)}
 @media(min-width:1000px){.pl{grid-template-columns:340px 1fr;gap:40px}#s-play .big{height:min(480px,58vh)}.st{font-size:34px}.th{flex-basis:72px;height:108px}}
@@ -157,8 +159,9 @@ input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--cream);o
   <p class="sub" style="font-size:18px">Your answers will be checked by your teacher.</p>
 </section>
 <section id="s-host" class="scr">
-  <div class="hh"><h1 class="ttl">Simi(a)live</h1><span id="hs">WAITING ROOM</span><span id="hc"></span><span id="ht"></span><span id="fsh" class="cz">Press Enter for fullscreen</span><span class="sp2"></span>
+  <div class="hh"><h1 class="ttl">Simi(a)live</h1><span id="hs">WAITING ROOM</span><span id="hc"></span><span id="ht"></span><span id="sync" class="cz"></span><span id="fsh" class="cz">Press Enter for fullscreen</span><span class="sp2"></span>
     <button class="btn sm" id="hb">Start game</button><button class="btn sm gh" id="hr">Reset</button></div>
+  <div id="vw" hidden>⚠ The Apps Script code is outdated, so progress and rankings will not update. Paste the newest Code.gs and Deploy a New version. · โค้ด Apps Script เป็นเวอร์ชันเก่า ให้วาง Code.gs ใหม่แล้ว Deploy แบบ New version</div>
   <div id="hg"></div>
 </section>
 </main>
@@ -356,7 +359,7 @@ function review(q, v) {
 let outbox = [], flushing = false;
 function commit(type, text, ok) {
   const n = ++qi; sfx('build'); setP(FIG, n / Q.length, true); hit(FIG.parentElement);
-  outbox.push({ id: me.id, no: me.no, name: me.name, qid: n, type, text, ok: !!ok, att: 0, retry: 0 });
+  outbox.push({ id: me.id, no: me.no, name: me.name, qid: n, type, text, ok: !!ok, att: 0, retry: 0, progress: n, total: Q.length });
   flush(); setTimeout(renderQ, 1700);
 }
 async function flush() { // ส่งทีละข้อตามลำดับ ส่งไม่สำเร็จจะลองใหม่เองจนกว่าจะสำเร็จ นักเรียนเล่นต่อได้ไม่ต้องรอ
@@ -383,7 +386,7 @@ function doneInfo(m) {
 }
 
 /* ---------- Host screen ---------- */
-const cards = {}; let t0 = 0;
+const cards = {}; let t0 = 0, lastOk = 0;
 function toggleFS() { const d = document; if (d.fullscreenElement) d.exitFullscreen(); else (d.documentElement.requestFullscreen || d.documentElement.webkitRequestFullscreen).call(d.documentElement); }
 function hostInit() {
   show('s-host');
@@ -391,8 +394,9 @@ function hostInit() {
   const key = demo ? '' : (prompt('Host key / รหัสโฮสต์') || '');
   $('hb').onclick = () => hostCmd('start', key);
   $('hr').onclick = () => { if (confirm('Reset the game and clear all players?')) hostCmd('reset', key); };
-  const tick = () => api('state').then(hostRender).catch(() => {});
+  const tick = () => api('state').then(x => { lastOk = Date.now(); hostRender(x); }).catch(() => {});
   tick(); setInterval(tick, 2000);
+  setInterval(() => { const a = lastOk ? (Date.now() - lastOk) / 1000 | 0 : -1, e = $('sync'); e.textContent = a < 0 ? 'connecting…' : a > 8 ? 'NO CONNECTION' : 'live · ' + a + 's'; e.style.color = a > 8 || a < 0 ? '#ff6a4a' : '#9fe3a8'; }, 1000);
   setInterval(() => { if (t0) { const s = (Date.now() - t0) / 1000 | 0; $('ht').textContent = String(s / 60 | 0).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); } else $('ht').textContent = ''; }, 1000);
 }
 async function hostCmd(a, key) { // ส่งคำสั่งโฮสต์ ลองซ้ำเองถ้าเครือข่ายสะดุด
@@ -404,6 +408,7 @@ async function hostCmd(a, key) { // ส่งคำสั่งโฮสต์ �
 }
 function toast(m) { const t = $('tt'); t.textContent = m; t.classList.add('on'); clearTimeout(t.h); t.h = setTimeout(() => t.classList.remove('on'), 3800); }
 function hostRender(s) {
+  $('vw').hidden = demo || s.v === 2;
   const live = s.status === 'playing', g = $('hg'), ids = s.players.map(p => p.id);
   if (live && !t0) t0 = Date.now(); if (!live) t0 = 0;
   $('hs').textContent = live ? 'LIVE' : 'WAITING ROOM'; $('hs').classList.toggle('live', live);
@@ -421,7 +426,7 @@ function hostRender(s) {
     c.querySelector('u').style.width = (100 * p.progress / p.total) + '%';
     c.querySelector('em').textContent = p.status === 'done' ? `#${p.rank}  ·  +${p.bonus}` : live ? `${p.progress} / ${p.total}` : 'ready';
     c.classList.toggle('done', p.status === 'done');
-    if (p.status === 'done' && !c.dataset.d) { c.dataset.d = 1; if (AU.c) { sfx('win'); toast(`${p.name} has awakened!  #${p.rank} · +${p.bonus}`); } }
+    if (p.status === 'done' && !c.dataset.d) { c.dataset.d = 1; toast(`${p.name} has awakened!  #${p.rank} · +${p.bonus}`); if (AU.c) sfx('win'); }
     const sv = c.querySelector('svg'), t = p.progress / p.total; if (+sv.dataset.p !== t) setP(sv, t, true);
     g.append(c);
   });
